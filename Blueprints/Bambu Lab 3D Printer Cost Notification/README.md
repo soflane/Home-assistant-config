@@ -65,7 +65,7 @@ Calculate **filament**, **electricity**, and **depreciation** costs for each Bam
 | **Energy Consumption Sensor**                                | ✅        | Your smart plug’s **cumulative kWh** sensor for the printer. |
 | **Start kWh Helper**                                         | ✅        | `input_number` to store the start kWh reading. Create one (e.g. `input_number.3d_print_kwh_start`). |
 | **Filament Price per KG**                                    | ✅        | e.g. `25.99` for €25.99/kg (your currency).                  |
-| **Electricity Cost per kWh**                                 | ✅        | e.g. `0.40` for €0.40/kWh.                                   |
+| **Electricity Cost per kWh**                                 | ✅        | e.g. `0.385` for €0.385/kWh.                                 |
 | **Printer Purchase Cost**                                    | ✅        | e.g. `1000`.                                                 |
 | **Printer Lifetime (hours)**                                 | ✅        | e.g. `6000`.                                                 |
 | **Telegram Chat ID(s)**                                      | ✅        | One or more chat IDs (comma-separated) . See below to find your chat ID(s).  e.g. `-1001234567890, 12345678` |
@@ -75,3 +75,137 @@ Calculate **filament**, **electricity**, and **depreciation** costs for each Bam
 | **Currency Symbol**                                          | ✅        | Defaults to `$`. Use `€`, `£`, etc. Only symbol (no spaces). Used for display only |
 
 > **Why length is optional?** Cost uses **weight × price/kg**. Length (m/ft) is nice for reporting but not essential.
+
+------
+
+#### Creating the helpers
+
+In Home Assistant, go to **Settings → Devices & Services → Helpers → Create Helper → Number**:
+
+- `input_number.3d_print_kwh_start` (no unit required)
+- Optionally:
+   `input_number.3d_cumulative_filament_weight` (g),
+   `input_number.3d_cumulative_filament_cost`,
+   `input_number.3d_cumulative_electrical_cost`,
+   `input_number.3d_cumulative_total_cost`,
+   `input_number.3d_last_print_kwh_used`
+
+![img](https://coltography.ca/wp-content/uploads/2024/12/Screenshot-2024-12-28-200453.png)
+
+*Image from [Colton Onushko’s post](https://coltography.ca/usage-cost-notifications-with-home-assistant-and-bambu-lab-3d-printers/)*
+
+
+
+------
+
+## Getting your Telegram chat ID
+
+First, Set up the **official Telegram** integration and your bot.
+
+##### Method 1: Telegram IDbot 
+
+- For private chat: message your bot; check HA **Notifications → Telegram** logs, or use @userinfobot to see your chat id.
+- For groups/supergroups: add your bot and send a message; use @RawDataBot or check HA logs. Group chat IDs are usually negative (e.g. `-100…`).
+
+##### Method 2: developer style
+
+- Send a message to your bot from your Telegram account (or a group).
+- In Home Assistant, watch **Developer Tools → Events** and listen for `telegram_text` (or check the integration logs). Copy the `chat_id`.
+- For multiple recipients, separate chat IDs with commas.
+
+Enter one or **multiple** IDs separated by commas:
+
+```
+123456789
+-1001122334455, 987654321
+```
+
+------
+
+## How It Works
+
+- **On `prepare`**: stores current cumulative kWh into `Start kWh Helper`.
+- **On `finish`**:
+   - Reads weight (g), optional length (mm/m), cumulative kWh, start/end timestamps.
+   - Calculates: kWh used, **filament cost** (`weight_g × price/kg ÷ 1000`), **electricity cost** (`kWh × price/kWh`), **depreciation** (`purchase_cost / lifetime_hours × hours_printed`).
+   - Updates cumulative helpers if provided.
+   - Sends **Telegram** message with MarkdownV2 Caption/body:
+     - If cover image available & not disabled: `telegram_bot.send_photo`.
+     - Else: `telegram_bot.send_message`.
+
+------
+
+## Example: Minimum Setup
+
+- **ha_url**: `http://homeassistant.local:8123`
+- **printer_status_sensor**: `sensor.p1s_print_status`
+- **printer_cover_image**: `image.p1s_cover_image` *(or leave empty)*
+- **printer_start_time_sensor**: `sensor.p1s_start_time`
+- **printer_end_time_sensor**: `sensor.p1s_end_time`
+- **print_weight_sensor**: `sensor.p1s_print_weight`
+- **total_usage_sensor**: `sensor.p1s_total_usage_hours`
+- **energy_usage_sensor**: `sensor.printer_plug_energy_kwh`
+- **start_energy_helper**: `input_number.print_kwh_start`
+- **filament_price_per_kg**: `25.99`
+- **energy_cost_per_kwh**: `0.40`
+- **printer_purchase_cost**: `1000`
+- **printer_lifetime_hours**: `6000`
+- **telegram_chat_ids**: `-1001234567890`
+
+*(All cumulative helpers optional.)*
+
+------
+
+## Message Example
+
+```
+🎉 3D PRINT COMPLETED
+⏱️ Duration: 3 hours, 17 minutes
+⚖️ Weight: 123.4 g – Cost: €3.20
+🧵 Filament Length: 12.5 m / 41.01 ft   (optional line)
+🔌 Power: 0.42 kWh – Cost: €0.17
+🛠️ Depreciation: €0.53
+💰 Total Cost: €3.90
+
+🕒 All Time Usage: 187.5 h
+📊 All Time Cost: €142.77
+🧵 All Time Filament: 6,235 g / 13.74 lbs
+```
+
+
+
+### Tips & Troubleshooting
+
+- **No image in Telegram:**
+  - Ensure **Print Cover Image** entity is set and has a valid `entity_picture`/`cover_image`.
+  - Make sure your **Home Assistant URL** is reachable by Telegram (if you’re proxying images; consider your public URL). If not, use **Disable Image**, or expose your URL via a secure method (reverse proxy, etc.).
+- **Caption rejected / Markdown errors:**
+  - The blueprint escapes MarkdownV2 characters. If you customize the template, keep the `md()` macro or switch to `parse_mode: html` (If editing blueprint).
+- **kWh stays 0:**
+  - Your energy sensor must be **cumulative** (`device_class: energy`) and in **kWh**.
+  - Ensure the printer is powered via that plug and the sensor updates frequently.
+- **Wrong duration:**
+  - Verify the **start/end time** sensors update correctly in your Bambu integration.
+  - This blueprint uses those timestamps directly.
+- **Currency formatting:**
+  - `currency_symbol` is pasted literally (no trailing space). Example: `€`.
+
+------
+
+## Privacy & Security
+
+- The Telegram caption includes cost/usage data. If that’s sensitive, use a **private chat** or limit the fields you include.
+- If you use an external `ha_url`, ensure it uses HTTPS where possible.
+
+------
+
+## Changelog
+
+- **v1.0.0** — Initial public release (length optional, Telegram official integration, MarkdownV2 escaping, image fallback to text).
+
+------
+
+## Credits
+
+- Original idea & flow heavily inspired by [Colton Onushko’s automation](https://coltography.ca/usage-cost-notifications-with-home-assistant-and-bambu-lab-3d-printers/).
+- Uses **HACS Bambu Lab** integration data for status, times, usage, and cover image.
