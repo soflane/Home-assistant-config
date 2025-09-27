@@ -91,7 +91,6 @@ In Home Assistant, go to **Settings → Devices & Services → Helpers → Creat
    `input_number.3d_last_print_kwh_used`
 
 ![img](https://coltography.ca/wp-content/uploads/2024/12/Screenshot-2024-12-28-200453.png)
-
 *Image from [Colton Onushko’s post](https://coltography.ca/usage-cost-notifications-with-home-assistant-and-bambu-lab-3d-printers/)*
 
 
