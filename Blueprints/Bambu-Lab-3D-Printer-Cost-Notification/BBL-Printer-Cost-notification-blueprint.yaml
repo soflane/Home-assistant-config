@@ -431,7 +431,7 @@ action:
                     - service: telegram_bot.send_photo
                       data:
                         target: "{{ _chat_id }}"
-                        url: "{{ _ha_url }}/{{ cover_image_url }}"
+                        url: "{{ _ha_url }}{{ cover_image_url }}"
                         caption: "{{ msg_body }}"
                         parse_mode: markdownv2
               default:
