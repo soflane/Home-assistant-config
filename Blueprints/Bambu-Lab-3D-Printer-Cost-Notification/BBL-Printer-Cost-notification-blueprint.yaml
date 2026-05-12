@@ -124,11 +124,14 @@ blueprint:
 
     # --- Telegram (official integration) ---
     telegram_chat_ids:
-      name: Telegram Chat ID(s)
-      description: "The notify service name for Telegram (e.g., notify.my_telegram_bot)."
+      name: Telegram Notify Target(s)
+      description: "The notify service name for Telegram (e.g., notify.telegram_bot_botid_yourid)."
       selector:
-        text:
-      default: ~
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+
 
     # Optional inputs for DND & cumulative stats
     sleep_mode_boolean:
@@ -406,21 +409,12 @@ action:
               {{ None }}
             {% endif %}
 
-          # Parse chat IDs (comma-separated) into a list (guarded)
-          chat_ids: >-
-            {% if _telegram_chat_ids is not none %}
-              {{ _telegram_chat_ids.split(',') | map('trim') | list }}
-            {% else %}
-              []
-            {% endif %}
-
       # Send single photo with caption (official Telegram Bot)
       - repeat:
           for_each: >
-            {{ chat_ids | select('string') | map('trim') | reject('equalto','') | list }}
+            {{ _telegram_chat_ids | select('string') | map('trim') | reject('equalto','') | list }}
           sequence:
             - variables:
-                _chat_id: "{{ repeat.item }}"
                 _image_disabled: >-
                   {{ _disable_image_boolean | default(false) }}
                 _has_image: >-
@@ -430,21 +424,21 @@ action:
                   sequence:
                     - service: telegram_bot.send_photo
                       data:
-                        target: "{{ _chat_id }}"
+                        entity_id: "{{ repeat.item | string }}"
                         url: "{{ _ha_url }}{{ cover_image_url }}"
                         caption: "{{ msg_body }}"
                         parse_mode: markdownv2
               default:
                 - service: telegram_bot.send_message
                   data:
-                    target: "{{ _chat_id }}"
+                    entity_id: "{{ repeat.item | string }}"
                     message: "{{ msg_body }}"
                     parse_mode: markdownv2
             - service: system_log.write
               data:
                 level: info
                 message: >
-                  [Bambu Print Notify] Sent to chat {{ _chat_id }} has_image={{ _has_image }} image_disabled={{ _image_disabled }} cover_image_url="{{ cover_image_url }}"
+                  [Bambu Print Notify] Sent to chat {{ repeat.item }} has_image={{ _has_image }} image_disabled={{ _image_disabled }} cover_image_url="{{ cover_image_url }}"
 
   # ========== Paused: Print Paused ==========
   - alias: Notify on print paused
@@ -459,13 +453,11 @@ action:
           - condition: template
             value_template: "{{ _sleep_mode_boolean is not none and (states(_sleep_mode_boolean) == 'off') }}"
     then:
-      - variables:
-          chat_ids: "{{ ( _telegram_chat_ids ).split(',') | map('trim') | list }}"
       - repeat:
-          for_each: "{{ chat_ids }}"
+          for_each: "{{ _telegram_chat_ids }}"
           sequence:
             - service: telegram_bot.send_message
               data:
-                target: "{{ repeat.item }}"
-                message: "⏸️ 3D Printer has paused the print job."
+                entity_id: "{{ repeat.item | string }}"
+                message: "⏸ 3D Printer has paused the print job."
                 parse_mode: markdownv2
